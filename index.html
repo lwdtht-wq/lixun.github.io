@@ -17,7 +17,9 @@
   .islet{fill:#f4dfb3;stroke:#b45309;stroke-width:1}
   .ring{fill:none;stroke:#9d174d;stroke-width:5}
   .pt{fill:#0ea5e9;stroke:#0b4a6f;stroke-width:1.2}
-  .label{font-size:16px;fill:#0b4a6f}
+  .label{font-size:16px;fill:#0b4a6f;pointer-events:none}
+  /* 让文字有白色描边的“光晕”，保证叠在地图上也清晰 */
+  .label-halo{ paint-order: stroke fill; stroke:#fff; stroke-width:3; }
   .hint{font-size:12px;fill:#64748b}
   .note{font-size:12px;color:#64748b;margin-top:6px}
 </style>
@@ -106,29 +108,42 @@ function getName(props){
   let ringR = Math.min(w,h)/4;
 
   const ringGroup = g.append("g");
+
   const ring = ringGroup.append("circle")
     .attr("class","ring")
     .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR)
     .attr("opacity",0)
     .transition().duration(700).delay(400).attr("opacity",1);
 
+  // 蓝色参考点
   const pt = ringGroup.append("circle")
     .attr("class","pt")
     .attr("r",5).attr("cx", ringCenter[0]-40).attr("cy", ringCenter[1]-20)
     .attr("opacity",0)
     .transition().duration(700).delay(450).attr("opacity",1);
 
-  const labelX = ringGroup.append("text")
-    .attr("class","label")
-    .attr("x", +pt.attr("cx")+8).attr("y", +pt.attr("cy")-8)
-    .text("x′").attr("opacity",0)
-    .transition().duration(700).delay(450).attr("opacity",1);
+  // —— 这里补上 x′ 标注（带白色 halo 的双层文本）——
+  const xPrimeHalo = ringGroup.append("text")
+    .attr("class","label label-halo")
+    .attr("opacity",0)
+    .text("x′");
 
+  const xPrime = ringGroup.append("text")
+    .attr("class","label")
+    .attr("opacity",0)
+    .text("x′");
+
+  // 圆的标注 B(x′)
   const labelB = ringGroup.append("text")
     .attr("class","label")
     .attr("x", +ringCenter[0]-ringR-14).attr("y", +ringCenter[1]+ringR-8)
     .text("B(x′)").attr("opacity",0)
     .transition().duration(700).delay(500).attr("opacity",1);
+
+  // 首次定位 x′ 文本
+  positionXPrime(+pt.attr("cx"), +pt.attr("cy"));
+  xPrimeHalo.transition().duration(700).delay(450).attr("opacity",1);
+  xPrime.transition().duration(700).delay(450).attr("opacity",1);
 
   g.append("text")
     .attr("class","hint")
@@ -158,10 +173,22 @@ function getName(props){
     ringGroup.select("circle.ring")
       .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
     hit.attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
-    const px = ringCenter[0] - ringR*0.25, py = ringCenter[1] - ringR*0.18;
+
+    const px = ringCenter[0] - ringR*0.25,
+          py = ringCenter[1] - ringR*0.18;
+
     ringGroup.select("circle.pt").attr("cx", px).attr("cy", py);
-    labelX.attr("x", px+8).attr("y", py-8);
-    labelB.attr("x", ringCenter[0]-ringR-14).attr("y", ringCenter[1]+ringR-8);
+    positionXPrime(px, py);
+
+    labelB.attr("x", ringCenter[0]-ringR-14)
+          .attr("y", ringCenter[1]+ringR-8);
+  }
+
+  // 让 x′ 文字跟随蓝点并稍微偏移（右上角）
+  function positionXPrime(px, py){
+    const tx = px + 8, ty = py - 8;
+    xPrime.attr("x", tx).attr("y", ty);
+    xPrimeHalo.attr("x", tx).attr("y", ty);
   }
 })();
 </script>
