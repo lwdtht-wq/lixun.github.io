@@ -14,12 +14,10 @@
 
   .grid line{stroke:#e5e7eb}
   .land{fill:#f4dfb3;stroke:#b45309;stroke-width:1.2}
-  .islet{fill:#f4dfb3;stroke:#b45309;stroke-width:1}
   .ring{fill:none;stroke:#9d174d;stroke-width:5}
   .pt{fill:#0ea5e9;stroke:#0b4a6f;stroke-width:1.2}
   .label{font-size:16px;fill:#0b4a6f;pointer-events:none}
-  /* 让文字有白色描边的“光晕”，保证叠在地图上也清晰 */
-  .label-halo{ paint-order: stroke fill; stroke:#fff; stroke-width:3; }
+  .label-halo{paint-order:stroke fill; stroke:#fff; stroke-width:3;}
   .hint{font-size:12px;fill:#64748b}
   .note{font-size:12px;color:#64748b;margin-top:6px}
 </style>
@@ -29,7 +27,7 @@
     <h1>Chart 10 (map)</h1>
     <p class="sub">Loaded from your GeoJSON. Drag the red circle; use mouse wheel to change radius.</p>
     <svg id="chart" viewBox="0 0 820 640" aria-label="map"></svg>
-    <div class="note">Tip: put <code>MasterPlan2019PlanningAreaBoundaryNoSea.geojson</code> in the SAME folder as this HTML. If some districts aren’t included, edit the <code>eastNames</code> list in the script.</div>
+    <div class="note">Put <code>MasterPlan2019PlanningAreaBoundaryNoSea.geojson</code> in the SAME folder as this HTML.</div>
   </div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -42,42 +40,28 @@ const svg = d3.select("#chart"),
 
 const g = svg.append("g").attr("transform", `translate(${M.l},${M.t})`);
 
-// 你的 GeoJSON 文件名（与本 HTML 同目录）
 const GEO_URL = "MasterPlan2019PlanningAreaBoundaryNoSea.geojson";
-
-// —— 认为属于“东部”的规划区（可按需增删）——
 const eastNames = [
   "Bedok","Tampines","Pasir Ris","Changi","Changi Bay","Changi Airport",
   "Marine Parade","Geylang","Kallang","Serangoon","Hougang","Sengkang","Punggol"
 ];
-
-// 从属性里取名字（兼容不同字段名）
 function getName(props){
   return props?.PLN_AREA_N ?? props?.Name ?? props?.name ?? props?.PLN_AREA ?? "";
 }
 
 (async function init(){
   const raw = await fetch(GEO_URL).then(r => r.json());
-
-  // 只取 MultiPolygon/Polygon
   const allFeatures = raw.type === "FeatureCollection" ? raw.features : [];
   const eastFeatures = allFeatures.filter(f => {
     const nm = (getName(f.properties) + "").toLowerCase().trim();
     return eastNames.some(x => nm === x.toLowerCase());
   });
+  const fc = { type:"FeatureCollection", features: eastFeatures.length ? eastFeatures : allFeatures };
 
-  // 如果筛不到，就退回全量（避免空图）
-  const fc = {
-    type: "FeatureCollection",
-    features: eastFeatures.length ? eastFeatures : allFeatures
-  };
-
-  // 投影
   const projection = d3.geoMercator();
   const path = d3.geoPath(projection);
   projection.fitExtent([[0,0],[w,h]], fc);
 
-  // 背景网格
   const cellsX = 12, cellsY = 12;
   g.append("g").attr("class","grid").selectAll("line.v")
     .data(d3.range(cellsX+1)).join("line")
@@ -91,7 +75,6 @@ function getName(props){
     .attr("x1", 0).attr("x2", w).attr("opacity",0)
     .transition().duration(600).delay(d=>d*12).attr("opacity",1);
 
-  // 陆地
   g.selectAll("path.land")
     .data(fc.features)
     .join("path")
@@ -100,7 +83,6 @@ function getName(props){
     .attr("opacity",0)
     .transition().duration(700).delay(200).attr("opacity",1);
 
-  // 初始圆心：用几何重心（若失败就放中心）
   let centerLonLat;
   try { centerLonLat = d3.geoCentroid(fc); } catch(e) {}
   if(!centerLonLat || !isFinite(centerLonLat[0])) { centerLonLat = projection.invert([w/2, h/2]); }
@@ -109,39 +91,39 @@ function getName(props){
 
   const ringGroup = g.append("g");
 
-  const ring = ringGroup.append("circle")
+  ringGroup.append("circle")
     .attr("class","ring")
     .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR)
     .attr("opacity",0)
     .transition().duration(700).delay(400).attr("opacity",1);
 
-  // 蓝色参考点
+  // 参考点（保留）
   const pt = ringGroup.append("circle")
     .attr("class","pt")
     .attr("r",5).attr("cx", ringCenter[0]-40).attr("cy", ringCenter[1]-20)
     .attr("opacity",0)
     .transition().duration(700).delay(450).attr("opacity",1);
 
-  // —— 这里补上 x′ 标注（带白色 halo 的双层文本）——
+  // x′ 放在圆心（带白色描边 + 居中锚点）
   const xPrimeHalo = ringGroup.append("text")
     .attr("class","label label-halo")
-    .attr("opacity",0)
-    .text("x′");
+    .attr("text-anchor","middle").attr("dominant-baseline","middle")
+    .attr("opacity",0).text("x′");
 
   const xPrime = ringGroup.append("text")
     .attr("class","label")
-    .attr("opacity",0)
-    .text("x′");
+    .attr("text-anchor","middle").attr("dominant-baseline","middle")
+    .attr("opacity",0).text("x′");
 
-  // 圆的标注 B(x′)
+  // B(x′) 放在圆左下
   const labelB = ringGroup.append("text")
     .attr("class","label")
-    .attr("x", +ringCenter[0]-ringR-14).attr("y", +ringCenter[1]+ringR-8)
+    .attr("x", ringCenter[0]-ringR-14).attr("y", ringCenter[1]+ringR-8)
     .text("B(x′)").attr("opacity",0)
     .transition().duration(700).delay(500).attr("opacity",1);
 
-  // 首次定位 x′ 文本
-  positionXPrime(+pt.attr("cx"), +pt.attr("cy"));
+  // 初定位到圆心
+  positionXPrimeCenter(ringCenter[0], ringCenter[1]);
   xPrimeHalo.transition().duration(700).delay(450).attr("opacity",1);
   xPrime.transition().duration(700).delay(450).attr("opacity",1);
 
@@ -174,21 +156,19 @@ function getName(props){
       .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
     hit.attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
 
+    // 参考点仍跟随，但 x′ 改为圆心
     const px = ringCenter[0] - ringR*0.25,
           py = ringCenter[1] - ringR*0.18;
-
     ringGroup.select("circle.pt").attr("cx", px).attr("cy", py);
-    positionXPrime(px, py);
 
+    positionXPrimeCenter(ringCenter[0], ringCenter[1]);
     labelB.attr("x", ringCenter[0]-ringR-14)
           .attr("y", ringCenter[1]+ringR-8);
   }
 
-  // 让 x′ 文字跟随蓝点并稍微偏移（右上角）
-  function positionXPrime(px, py){
-    const tx = px + 8, ty = py - 8;
-    xPrime.attr("x", tx).attr("y", ty);
-    xPrimeHalo.attr("x", tx).attr("y", ty);
+  function positionXPrimeCenter(cx, cy){
+    xPrime.attr("x", cx).attr("y", cy);
+    xPrimeHalo.attr("x", cx).attr("y", cy);
   }
 })();
 </script>
