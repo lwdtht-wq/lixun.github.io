@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Chart 10 (map) — East Singapore from your GeoJSON</title>
+
+<style>
+  html,body{margin:0;background:#fff;font-family:system-ui,Segoe UI,Arial}
+  .wrap{max-width:960px;margin:28px auto;padding:0 16px}
+  h1{margin:0 0 10px;font-size:26px}
+  .sub{color:#666;margin:0 0 12px}
+
+  svg{width:100%;height:auto;display:block;background:#fff}
+
+  .grid line{stroke:#e5e7eb}
+  .land{fill:#f4dfb3;stroke:#b45309;stroke-width:1.2}
+  .islet{fill:#f4dfb3;stroke:#b45309;stroke-width:1}
+  .ring{fill:none;stroke:#9d174d;stroke-width:5}
+  .pt{fill:#0ea5e9;stroke:#0b4a6f;stroke-width:1.2}
+  .label{font-size:16px;fill:#0b4a6f}
+  .hint{font-size:12px;fill:#64748b}
+  .note{font-size:12px;color:#64748b;margin-top:6px}
+</style>
+
+<body>
+  <div class="wrap">
+    <h1>Chart 10 (map)</h1>
+    <p class="sub">Loaded from your GeoJSON. Drag the red circle; use mouse wheel to change radius.</p>
+    <svg id="chart" viewBox="0 0 820 640" aria-label="map"></svg>
+    <div class="note">Tip: put <code>MasterPlan2019PlanningAreaBoundaryNoSea.geojson</code> in the SAME folder as this HTML. If some districts aren’t included, edit the <code>eastNames</code> list in the script.</div>
+  </div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const svg = d3.select("#chart"),
+      W = 820, H = 640,
+      M = {t:24, r:24, b:28, l:24},
+      w = W - M.l - M.r,
+      h = H - M.t - M.b;
+
+const g = svg.append("g").attr("transform", `translate(${M.l},${M.t})`);
+
+// 你的 GeoJSON 文件名（与本 HTML 同目录）
+const GEO_URL = "MasterPlan2019PlanningAreaBoundaryNoSea.geojson";
+
+// —— 认为属于“东部”的规划区（可按需增删）——
+const eastNames = [
+  "Bedok","Tampines","Pasir Ris","Changi","Changi Bay","Changi Airport",
+  "Marine Parade","Geylang","Kallang","Serangoon","Hougang","Sengkang","Punggol"
+];
+
+// 从属性里取名字（兼容不同字段名）
+function getName(props){
+  return props?.PLN_AREA_N ?? props?.Name ?? props?.name ?? props?.PLN_AREA ?? "";
+}
+
+(async function init(){
+  const raw = await fetch(GEO_URL).then(r => r.json());
+
+  // 只取 MultiPolygon/Polygon
+  const allFeatures = raw.type === "FeatureCollection" ? raw.features : [];
+  const eastFeatures = allFeatures.filter(f => {
+    const nm = (getName(f.properties) + "").toLowerCase().trim();
+    return eastNames.some(x => nm === x.toLowerCase());
+  });
+
+  // 如果筛不到，就退回全量（避免空图）
+  const fc = {
+    type: "FeatureCollection",
+    features: eastFeatures.length ? eastFeatures : allFeatures
+  };
+
+  // 投影
+  const projection = d3.geoMercator();
+  const path = d3.geoPath(projection);
+  projection.fitExtent([[0,0],[w,h]], fc);
+
+  // 背景网格
+  const cellsX = 12, cellsY = 12;
+  g.append("g").attr("class","grid").selectAll("line.v")
+    .data(d3.range(cellsX+1)).join("line")
+    .attr("x1", d => d * (w/cellsX)).attr("x2", d => d * (w/cellsX))
+    .attr("y1", 0).attr("y2", h).attr("opacity",0)
+    .transition().duration(600).delay(d=>d*12).attr("opacity",1);
+
+  g.append("g").attr("class","grid").selectAll("line.h")
+    .data(d3.range(cellsY+1)).join("line")
+    .attr("y1", d => d * (h/cellsY)).attr("y2", d => d * (h/cellsY))
+    .attr("x1", 0).attr("x2", w).attr("opacity",0)
+    .transition().duration(600).delay(d=>d*12).attr("opacity",1);
+
+  // 陆地
+  g.selectAll("path.land")
+    .data(fc.features)
+    .join("path")
+    .attr("class","land")
+    .attr("d", path)
+    .attr("opacity",0)
+    .transition().duration(700).delay(200).attr("opacity",1);
+
+  // 初始圆心：用几何重心（若失败就放中心）
+  let centerLonLat;
+  try { centerLonLat = d3.geoCentroid(fc); } catch(e) {}
+  if(!centerLonLat || !isFinite(centerLonLat[0])) { centerLonLat = projection.invert([w/2, h/2]); }
+  let ringCenter = projection(centerLonLat);
+  let ringR = Math.min(w,h)/4;
+
+  const ringGroup = g.append("g");
+  const ring = ringGroup.append("circle")
+    .attr("class","ring")
+    .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR)
+    .attr("opacity",0)
+    .transition().duration(700).delay(400).attr("opacity",1);
+
+  const pt = ringGroup.append("circle")
+    .attr("class","pt")
+    .attr("r",5).attr("cx", ringCenter[0]-40).attr("cy", ringCenter[1]-20)
+    .attr("opacity",0)
+    .transition().duration(700).delay(450).attr("opacity",1);
+
+  const labelX = ringGroup.append("text")
+    .attr("class","label")
+    .attr("x", +pt.attr("cx")+8).attr("y", +pt.attr("cy")-8)
+    .text("x′").attr("opacity",0)
+    .transition().duration(700).delay(450).attr("opacity",1);
+
+  const labelB = ringGroup.append("text")
+    .attr("class","label")
+    .attr("x", +ringCenter[0]-ringR-14).attr("y", +ringCenter[1]+ringR-8)
+    .text("B(x′)").attr("opacity",0)
+    .transition().duration(700).delay(500).attr("opacity",1);
+
+  g.append("text")
+    .attr("class","hint")
+    .attr("x", 8).attr("y", h-8)
+    .text(eastFeatures.length ? "Loaded East Singapore from your file. Drag ring to move; scroll to change radius." :
+                                "No East filter match; showing full file. Drag ring to move; scroll to change radius.");
+
+  // 交互：拖动 + 滚轮改半径
+  const hit = ringGroup.append("circle")
+    .attr("cx", ringCenter[0]).attr("cy", ringCenter[1])
+    .attr("r", ringR).attr("fill","transparent").style("cursor","grab");
+
+  const drag = d3.drag()
+    .on("start", () => hit.style("cursor","grabbing"))
+    .on("drag", (ev) => { ringCenter = [ev.x, ev.y]; updateRing(); })
+    .on("end", () => hit.style("cursor","grab"));
+  hit.call(drag);
+
+  svg.on("wheel", (ev) => {
+    ev.preventDefault();
+    const delta = ev.deltaY < 0 ? -14 : 14;
+    ringR = Math.max(24, Math.min(Math.min(w,h)/2.2, ringR + delta));
+    updateRing();
+  }, {passive:false});
+
+  function updateRing(){
+    ringGroup.select("circle.ring")
+      .attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
+    hit.attr("cx", ringCenter[0]).attr("cy", ringCenter[1]).attr("r", ringR);
+    const px = ringCenter[0] - ringR*0.25, py = ringCenter[1] - ringR*0.18;
+    ringGroup.select("circle.pt").attr("cx", px).attr("cy", py);
+    labelX.attr("x", px+8).attr("y", py-8);
+    labelB.attr("x", ringCenter[0]-ringR-14).attr("y", ringCenter[1]+ringR-8);
+  }
+})();
+</script>
+</body>
+</html>
